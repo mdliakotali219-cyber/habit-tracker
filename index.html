@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#14202b">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>হ্যাবিট ট্র্যাকার</title>
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#eef1f4;--panel:#fff;--ink:#14202b;--mute:#6b7885;--navy:#14202b;--navy-ink:#f2f5f8;--line:#d5dbe1;--ok:#1f8f5f;--acc:#2f6fed;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e141a;--panel:#18222c;--ink:#e8edf2;--mute:#8fa0af;--navy:#0a1016;--line:#2a3745;--acc:#6b9bff}}
+:root[data-theme="dark"]{--bg:#0e141a;--panel:#18222c;--ink:#e8edf2;--mute:#8fa0af;--navy:#0a1016;--line:#2a3745;--acc:#6b9bff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Hind Siliguri",system-ui,sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:14px}
+header{background:var(--navy);color:var(--navy-ink);border-radius:10px;padding:14px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+h1{margin:0;font-size:1.3rem}
+.ctl{display:flex;gap:8px}
+select,input,button{font:inherit;border-radius:8px;border:1px solid var(--line);padding:6px 10px;background:var(--panel);color:var(--ink)}
+button{cursor:pointer;background:var(--acc);color:#fff;border-color:transparent;font-weight:600}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-top:12px;padding:12px}
+.add{display:flex;gap:8px}.add input{flex:1}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;min-width:100%}
+th,td{text-align:center;padding:3px;font-size:.78rem}
+th{color:var(--mute);font-weight:600}
+td.name{text-align:left;position:sticky;left:0;background:var(--panel);min-width:130px;font-size:.9rem;font-weight:600;white-space:nowrap}
+td.name span{color:var(--mute);cursor:pointer;margin-left:6px;font-weight:400}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--ok);cursor:pointer;margin:0}
+.stat{display:flex;gap:10px;flex-wrap:wrap}
+.stat div{flex:1;min-width:110px;background:var(--bg);border-radius:8px;padding:8px 10px}
+.stat b{display:block;font-size:1.3rem}
+.stat small{color:var(--mute)}
+.chart{height:220px}
+.empty{color:var(--mute);padding:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<h1>হ্যাবিট ট্র্যাকার</h1>
+<div class="ctl">
+<select id="year"></select>
+<select id="month"></select>
+<button id="theme" aria-label="থিম">◐</button>
+</div>
+</header>
+
+<div class="card add">
+<input id="newHabit" placeholder="নতুন অভ্যাস লিখুন, যেমন: ভোরে ওঠা" maxlength="40">
+<button id="addBtn">যোগ করুন</button>
+</div>
+
+<div class="card stat">
+<div><b id="sToday">0%</b><small>আজকের প্রগ্রেস</small></div>
+<div><b id="sMonth">0%</b><small>এই মাসের গড়</small></div>
+<div><b id="sStreak">0</b><small>টানা পূর্ণ দিন</small></div>
+</div>
+
+<div class="card scroll"><table id="grid"></table></div>
+
+<div class="card">
+<div class="chart"><canvas id="chart"></canvas></div>
+</div>
+</div>
+
+<script>
+const BN="০১২৩৪৫৬৭৮৯",bn=n=>String(n).replace(/\d/g,d=>BN[d]);
+const MONTHS=["জানুয়ারি","ফেব্রুয়ারি","মার্চ","এপ্রিল","মে","জুন","জুলাই","আগস্ট","সেপ্টেম্বর","অক্টোবর","নভেম্বর","ডিসেম্বর"];
+const KEY="habitTrackerV1";
+let state={habits:["ভোরে ওঠা","ব্যায়াম","পড়াশোনা","দিনের পরিকল্পনা"],checks:{}};
+try{const s=localStorage.getItem(KEY);if(s)state=JSON.parse(s)}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}};
+const now=new Date();
+const ys=document.getElementById("year"),ms=document.getElementById("month");
+for(let y=now.getFullYear()-2;y<=now.getFullYear()+2;y++)ys.add(new Option(bn(y),y));
+MONTHS.forEach((m,i)=>ms.add(new Option(m,i)));
+ys.value=now.getFullYear();ms.value=now.getMonth();
+const ym=()=>ys.value+"-"+(+ms.value+1);
+const dim=()=>new Date(+ys.value,+ms.value+1,0).getDate();
+let chart;
+function pct(d){const h=state.habits.length;if(!h)return 0;let c=0;state.habits.forEach((_,i)=>{if(state.checks[ym()+"|"+i+"|"+d])c++});return Math.round(c/h*100)}
+function render(){
+const n=dim(),g=document.getElementById("grid");
+if(!state.habits.length){g.innerHTML='<tr><td class="empty">উপরে একটি অভ্যাস যোগ করুন।</td></tr>';}
+else{
+let h='<tr><th></th>';for(let d=1;d<=n;d++)h+=`<th>${bn(d)}</th>`;h+='</tr>';
+state.habits.forEach((name,i)=>{
+h+=`<tr><td class="name">${name.replace(/</g,"&lt;")}<span data-del="${i}" title="মুছুন">✕</span></td>`;
+for(let d=1;d<=n;d++)h+=`<td><input type="checkbox" data-i="${i}" data-d="${d}" ${state.checks[ym()+"|"+i+"|"+d]?"checked":""}></td>`;
+h+='</tr>'});
+g.innerHTML=h}
+stats();draw();
+}
+function stats(){
+const n=dim(),isNow=+ys.value===now.getFullYear()&&+ms.value===now.getMonth();
+const last=isNow?now.getDate():n;
+document.getElementById("sToday").textContent=bn(isNow?pct(now.getDate()):0)+"%";
+let t=0;for(let d=1;d<=last;d++)t+=pct(d);
+document.getElementById("sMonth").textContent=bn(Math.round(t/last))+"%";
+let s=0;for(let d=last;d>=1;d--){if(pct(d)===100&&state.habits.length)s++;else break}
+document.getElementById("sStreak").textContent=bn(s);
+}
+function draw(){
+const n=dim(),labels=[],data=[];
+for(let d=1;d<=n;d++){labels.push(bn(d));data.push(pct(d))}
+if(typeof Chart==="undefined")return;
+if(chart)chart.destroy();
+const css=getComputedStyle(document.documentElement);
+chart=new Chart(document.getElementById("chart"),{type:"line",
+data:{labels,datasets:[{label:"দৈনিক প্রগ্রেস (%)",data,borderColor:css.getPropertyValue("--acc").trim()||"#2f6fed",backgroundColor:"rgba(47,111,237,.15)",fill:true,tension:.3,pointRadius:2}]},
+options:{maintainAspectRatio:false,scales:{y:{min:0,max:100},x:{grid:{display:false}}},plugins:{legend:{display:false}}}});
+}
+document.getElementById("grid").addEventListener("click",e=>{
+const t=e.target;
+if(t.dataset.del!==undefined){
+const i=+t.dataset.del;if(!confirm("\""+state.habits[i]+"\" মুছে ফেলবেন?"))return;
+state.habits.splice(i,1);
+const nc={};Object.keys(state.checks).forEach(k=>{const[p,hi,d]=k.split("|");const x=+hi;if(x===i)return;nc[p+"|"+(x>i?x-1:x)+"|"+d]=1});
+state.checks=nc;save();render();return}
+if(t.dataset.i!==undefined){
+const k=ym()+"|"+t.dataset.i+"|"+t.dataset.d;
+if(t.checked)state.checks[k]=1;else delete state.checks[k];
+save();stats();draw()}
+});
+function addHabit(){const v=document.getElementById("newHabit");const s=v.value.trim();if(!s)return;state.habits.push(s);v.value="";save();render()}
+document.getElementById("addBtn").onclick=addHabit;
+document.getElementById("newHabit").addEventListener("keydown",e=>{if(e.key==="Enter")addHabit()});
+ys.onchange=ms.onchange=render;
+document.getElementById("theme").onclick=()=>{
+const r=document.documentElement,dark=r.dataset.theme?r.dataset.theme==="dark":matchMedia("(prefers-color-scheme:dark)").matches;
+r.dataset.theme=dark?"light":"dark";draw()};
+render();
+if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+</script>
+</body>
+</html>
